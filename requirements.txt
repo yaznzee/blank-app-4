@@ -1,12 +1,1 @@
-pandas
-numpy
-shap
 streamlit
-torch
-scikit-learn
-matplotlib
-seaborn
-plotly
-pycaret
-xgboost
-mlflow
