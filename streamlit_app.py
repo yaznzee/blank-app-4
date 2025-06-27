@@ -17,7 +17,7 @@ from sklearn import metrics
 import matplotlib.pyplot as plt
 
 st.set_page_config(
-    page_title="Used-Car Explorer",
+    page_title="Used-Car Explorer ",
     layout="centered",
     page_icon="🏎️",
 )
