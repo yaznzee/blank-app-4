@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import streamlit as st
 import numpy as np
+from contextlib import contextmanager
 from sklearn.preprocessing import LabelEncoder
 import streamlit.components.v1 as components
 from datetime import datetime
@@ -39,6 +40,24 @@ def encode_data(df):
         if col in df_encoded.columns:
             df_encoded[col] = le.fit_transform(df_encoded[col].astype(str))
     return df_encoded
+
+
+def load_mlflow():
+    try:
+        import mlflow
+        return mlflow, None
+    except Exception as exc:
+        return None, exc
+
+
+@contextmanager
+def optional_mlflow_run(run_name):
+    mlflow, _ = load_mlflow()
+    if mlflow is None:
+        yield None
+        return
+    with mlflow.start_run(run_name=run_name):
+        yield mlflow
 
 st.write("   ")
 st.write("   ")
@@ -273,7 +292,6 @@ elif page == "Visualization 📊":
     st.caption("© 2025 Used-Car Explorer | Yazn & Ann-Mei")
 
 elif page == "Prediction 🔮":
-    import mlflow
     from sklearn.linear_model import LinearRegression
     from sklearn.tree import DecisionTreeRegressor
     from sklearn.ensemble import RandomForestRegressor
@@ -285,6 +303,7 @@ elif page == "Prediction 🔮":
     import matplotlib.pyplot as plt
 
     st.title("🔮 Predict Used Car Prices")
+    mlflow, mlflow_error = load_mlflow()
 
     # Drop NA
     df_encoded = df_encoded.dropna()
@@ -322,12 +341,12 @@ elif page == "Prediction 🔮":
         elif model_name == "XGBoost":
             model = XGBRegressor(objective='reg:squarederror', **params, random_state=42)
 
-        # MLflow tracking
-        with mlflow.start_run(run_name=model_name):
-            mlflow.log_param("model", model_name)
-            for k, v in params.items():
-                mlflow.log_param(k, v)
-
+        # Keep prediction available even when MLflow cannot be imported.
+        with optional_mlflow_run(model_name) as active_mlflow:
+            if active_mlflow is not None:
+                active_mlflow.log_param("model", model_name)
+                for k, v in params.items():
+                    active_mlflow.log_param(k, v)
             model.fit(X_train, y_train)
             predictions = model.predict(X_test)
 
@@ -336,14 +355,17 @@ elif page == "Prediction 🔮":
             mae = metrics.mean_absolute_error(y_test, predictions)
             r2 = metrics.r2_score(y_test, predictions)
 
-            mlflow.log_metric("mse", mse)
-            mlflow.log_metric("mae", mae)
-            mlflow.log_metric("r2", r2)
+            if active_mlflow is not None:
+                active_mlflow.log_metric("mse", mse)
+                active_mlflow.log_metric("mae", mae)
+                active_mlflow.log_metric("r2", r2)
 
         st.subheader(f"📊 Model Evaluation ({model_name})")
         st.write("- Mean Absolute Error (MAE):", round(mae, 2))
         st.write("- Mean Squared Error (MSE):", round(mse, 2))
         st.write("- R² Score:", round(r2, 3))
+        if mlflow_error is not None:
+            st.info("MLflow logging is unavailable in this deployment, so predictions run without experiment tracking.")
 
         fig, ax = plt.subplots()
         ax.scatter(y_test, predictions, alpha=0.5)
@@ -442,14 +464,17 @@ elif page == "Explainability 🔍":
 
 elif page == "MLflow Runs 📈":
     # MLflow and DagsHub initialization
-    import mlflow
-    import mlflow.sklearn
     import dagshub
-    import shap
+    mlflow, mlflow_error = load_mlflow()
+
+    if mlflow is None:
+        st.subheader("05 MLflow Runs 📈")
+        st.warning("MLflow runs are unavailable in this deployment because MLflow could not be imported.")
+        st.caption(f"Import error: {mlflow_error}")
+        st.stop()
 
     # Initialize DagsHub with MLflow integration
     dagshub.init(repo_owner='yaa2076', repo_name='usedCarRepo', mlflow=True)
-    import mlflow
     st.subheader("05 MLflow Runs 📈")
     # Fetch runs
     runs = mlflow.search_runs(order_by=["start_time desc"])
